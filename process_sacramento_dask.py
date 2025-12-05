@@ -1,6 +1,6 @@
 """
 Local Dask-based processing pipeline for Sacramento crossings
-No cloud services, runs on your machine with all CPU cores
+Downloads satellite imagery and saves with coordinates in filename
 """
 
 import pandas as pd
@@ -37,7 +37,7 @@ class SacramentoProcessor:
     REQUIRED_COLUMNS = ['x', 'y']
 
     def __init__(self, coords_file='coordinates/sacramento_coords.csv', 
-                 output_dir='outputs', cache_dir=r"M:\Intersection-Images\cache"):
+                 output_dir='outputs', cache_dir=r"C:/Users/tenoru/Downloads/cache"):
         """
         Args:
             coords_file: Path to sacramento_coords.csv
@@ -99,19 +99,22 @@ class SacramentoProcessor:
             return None
     
     @delayed
-    def process_intersection(self, idx, lon, lat, zoom=21):
+    def process_intersection(self, lat, lon, zoom=21):
         """
         Process a single intersection:
         1. Check cache for image.
         2. Fetch and save if not cached.
-        3. [Next steps: segment, analyze, etc.]
+        3. Save with coordinates in filename.
         
         Args:
-            zoom: Target zoom level (higher = more zoomed in, default 20).
+            lat: Latitude
+            lon: Longitude
+            zoom: Target zoom level (higher = more zoomed in, default 21).
                   The fetcher will try zoom ± 1 if the target fails.
         """
         
-        cache_file = self.cache_dir / f'index_{idx}.png'
+        # Cache filename now includes coordinates
+        cache_file = self.cache_dir / f'crosswalk_{lat}_{lon}.png'
         
         try:
             # --- STAGE 1: Caching and Download ---
@@ -126,28 +129,26 @@ class SacramentoProcessor:
                 
                 if img is None:
                     return {
-                        'idx': idx, 'lon': lon, 'lat': lat, 
+                        'lat': lat, 'lon': lon, 
                         'status': 'failed', 'error': 'Could not fetch imagery'
                     }
                 
                 # SAVE the newly downloaded image to the cache
                 Image.fromarray(img).save(cache_file)
                 
-            # --- STAGE 2: Processing (Future Implementation) ---
-            # TODO: Segment image with SAM model
-            # TODO: Apply grow-cut algorithm
             
             return {
-                'idx': idx, 'lon': lon, 'lat': lat, 
+                'lat': lat, 'lon': lon, 
                 'status': 'success', 
                 'source': source,  # Tells you if it was downloaded or loaded from cache
                 'imagery_shape': img.shape,
+                'filename': cache_file.name,  # Include filename in result
             }
             
         except Exception as e:
-            logger.error(f"Error processing intersection {idx}: {e}")
+            logger.error(f"Error processing intersection ({lat}, {lon}): {e}")
             return {
-                'idx': idx, 'lon': lon, 'lat': lat, 
+                'lat': lat, 'lon': lon, 
                 'status': 'error', 'error': str(e)
             }
     
@@ -170,9 +171,9 @@ class SacramentoProcessor:
         
         logger.info(f"Processing {len(coords_df)} intersections with Dask...")
         
-        # Create delayed tasks
+        # Create delayed tasks with coordinates from CSV
         tasks = [
-            self.process_intersection(idx, row['x'], row['y'])
+            self.process_intersection(row['y'], row['x'])  # y=lat, x=lon
             for idx, row in coords_df.iterrows()
         ]
         
@@ -197,6 +198,7 @@ class SacramentoProcessor:
         logger.info(f"Successful: {len(results_df[results_df['status']=='success'])}")
         logger.info(f"Failed: {len(results_df[results_df['status']=='failed'])}")
         logger.info(f"Errors: {len(results_df[results_df['status']=='error'])}")
+        logger.info(f"Images saved to: {self.cache_dir}")
         logger.info("="*60)
         
         return results_df
@@ -233,6 +235,9 @@ def main():
         processor.run_pipeline(sample_size=args.sample)
         
         logger.info("Processing complete!")
+        
+        
+        
         
     except FileNotFoundError as e:
         logger.error(f"File error: {e}")
