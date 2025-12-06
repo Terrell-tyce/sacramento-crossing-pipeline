@@ -80,17 +80,17 @@ def generate_sacramento_crossing_coords():
                 geom = row.geometry
                 if geom.geom_type == 'LineString':
                     # Get both start and end points of crossing
-                    for point in [geom.coords[0], geom.coords[-1]]:
-                        lon, lat = point[0], point[1]
-                        coord_tuple = (round(lon, 6), round(lat, 6))
-                        if coord_tuple not in seen_coords:
-                            seen_coords.add(coord_tuple)
-                            coords.append({
-                                'index': len(coords),
-                                'x': lon,
-                                'y': lat,
-                                'source': 'crossing_edge'
-                            })
+                    midpoint = geom.interpolate(0.5, normalized=True)
+                    lon, lat = midpoint.x, midpoint.y
+                    coord_tuple = (round(lon, 6), round(lat, 6))
+                    if coord_tuple not in seen_coords:
+                        seen_coords.add(coord_tuple)
+                        coords.append({
+                            'index': len(coords),
+                            'x': lon,
+                            'y': lat,
+                            'source': 'crossing_edge'
+                        })
                 elif geom.geom_type == 'Point':
                     # Single point crossing
                     lon, lat = geom.x, geom.y
